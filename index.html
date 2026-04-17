@@ -7,131 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-
 <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-authentication-library/2.38.0/msal-browser.min.js"></script>
-<script>
-/* ══════════════════════════════════════════════════════════
-   MSAL — Autenticação Microsoft 365
-   App: TechReviewApp | Tenant: Service Informatica LTDA
-══════════════════════════════════════════════════════════ */
-const _MSAL_CFG = {
-  auth: {
-    clientId:    '4459d583-3048-472c-b826-56244a8aadad',
-    authority:   'https://login.microsoftonline.com/ca18815d-48a9-47e8-95f7-2c31e426f313',
-    redirectUri: 'https://thiagouchoa13.github.io/techreview-app',
-  },
-  cache: { cacheLocation: 'sessionStorage' }
-};
-const SP_SITE   = 'https://serviceitcombr.sharepoint.com/sites/TechReviewAI';
-const SP_SCOPES = ['https://serviceitcombr.sharepoint.com/AllSites.Write'];
-const _msal     = new msal.PublicClientApplication(_MSAL_CFG);
-let _msalToken  = null;
-
-async function _getToken() {
-  const accounts = _msal.getAllAccounts();
-  if (!accounts.length) return null;
-  _msal.setActiveAccount(accounts[0]);
-  try {
-    const r = await _msal.acquireTokenSilent({ scopes: SP_SCOPES });
-    return r.accessToken;
-  } catch(e) {
-    await _msal.acquireTokenRedirect({ scopes: SP_SCOPES });
-    return null;
-  }
-}
-
-async function initSPContext() {
-  await _msal.initialize();
-  const resp = await _msal.handleRedirectPromise();
-  if (resp) { _msalToken = resp.accessToken; _msal.setActiveAccount(resp.account); }
-
-  const accounts = _msal.getAllAccounts();
-  if (!accounts.length) {
-    await _msal.loginRedirect({ scopes: SP_SCOPES });
-    return;
-  }
-  _msalToken = await _getToken();
-  const account = _msal.getActiveAccount();
-
-  const dot  = document.getElementById('sp-conn-dot');
-  const lbl  = document.getElementById('sp-conn-lbl');
-  const site = document.getElementById('sp-site-url');
-  const user = document.getElementById('sp-user-lbl');
-  if (dot)  dot.classList.add('on');
-  if (lbl)  lbl.textContent = 'Conectado';
-  if (site) site.textContent = SP_SITE.replace('https://','');
-  if (user) user.textContent = account?.name || account?.username || '';
-  startPolling();
-}
-
-function getSPContext() {
-  return { webUrl: SP_SITE, online: !!_msalToken };
-}
-
-async function spPostItem(webUrl, listId, fields) {
-  _msalToken = await _getToken();
-  const r = await fetch(`${webUrl}/_api/web/lists(guid'${listId}')/items`, {
-    method: 'POST',
-    headers: {
-      'Authorization': 'Bearer ' + _msalToken,
-      'Accept':        'application/json;odata=verbose',
-      'Content-Type':  'application/json;odata=verbose',
-    },
-    body: JSON.stringify({ '__metadata': { 'type': 'SP.ListItem' }, ...fields }),
-  });
-  if (!r.ok) { const e=await r.json().catch(()=>({})); throw new Error(e?.error?.message?.value||'HTTP '+r.status); }
-  return await r.json();
-}
-
-async function spGetItems(webUrl, listId, filter, select, orderby) {
-  _msalToken = await _getToken();
-  let url = `${webUrl}/_api/web/lists(guid'${listId}')/items?$top=50`;
-  if (filter)  url += '&$filter='  + encodeURIComponent(filter);
-  if (select)  url += '&$select='  + encodeURIComponent(select);
-  if (orderby) url += '&$orderby=' + encodeURIComponent(orderby);
-  const r = await fetch(url, {
-    headers: { 'Authorization': 'Bearer ' + _msalToken, 'Accept': 'application/json;odata=verbose' }
-  });
-  if (!r.ok) throw new Error('GET '+r.status);
-  return (await r.json()).d.results;
-}
-
-async function spUploadAttachment(webUrl, listId, itemId, fileName, fileContent) {
-  _msalToken = await _getToken();
-  const url = `${webUrl}/_api/web/lists(guid'${listId}')/items(${itemId})/AttachmentFiles/add(FileName='${encodeURIComponent(fileName)}')`;
-  const r = await fetch(url, {
-    method: 'POST',
-    headers: { 'Authorization': 'Bearer ' + _msalToken, 'Accept': 'application/json;odata=verbose' },
-    body: fileContent,
-  });
-  if (!r.ok) throw new Error('Upload '+r.status);
-  return await r.json();
-}
-
-async function pollSharePoint() {
-  try {
-    _msalToken = await _getToken(); if (!_msalToken) return;
-    const items = await spGetItems(SP_SITE, SP_LIST_REVISOES,
-      "Status eq 'Revisado'",
-      "ID,Title,Cliente,Score,Risco,Status,Modified",
-      "Modified desc"
-    );
-    let updated = 0;
-    items.forEach(item => {
-      const idx = reviews.findIndex(r => r._spId === item.ID);
-      if (idx > -1 && reviews[idx]._status !== 'done') {
-        reviews[idx]._status='done'; reviews[idx].Status='Revisado';
-        reviews[idx].Score=item.Score; reviews[idx].Risco=item.Risco;
-        updated++;
-      }
-    });
-    if (updated > 0) { renderReviews(); toast(updated+' revisão'+(updated>1?'ões':'')+' concluída'+(updated>1?'s':'')+' pelo Power Automate','suc'); }
-    const el=document.getElementById('poll-txt');
-    if(el) el.textContent='Última verificação: '+new Date().toLocaleTimeString('pt-BR');
-  } catch(e) { console.warn('Polling erro:',e); }
-}
-</script>
-
 <style>
 
 :root {
@@ -1572,7 +1448,8 @@ to{opacity:0}}
 
 <script>
 /* ══ STATE ══ */
-let reviews = [], files = [], cfg = {}, haVal='', drVal='', pollTimer=null;
+var reviews = _reviews;
+var files = [], haVal='', drVal='', pollTimer=null;
 let treeAllExpanded = false;
 
 /* ══════════════════════════════════════════
@@ -3516,57 +3393,194 @@ document.addEventListener('DOMContentLoaded', ()=>{
 
 <div class="toasts" id="toasts"></div>
 
+<!-- ══ GLOBALS: SPA + MSAL + SP API ══ -->
 <script>
 /* ═══ SPA CONTROLLER ═══ */
-const SCREENS = {
-  form:      {el:'screen-form',      nav:'nav-form',      sub:'Análise de arquitetura com Gemini 2.5 Flash', print:false},
-  dashboard: {el:'screen-dashboard', nav:'nav-dashboard', sub:'Dashboard · Histórico de revisões',           print:false},
-  relatorio: {el:'screen-relatorio', nav:'nav-relatorio', sub:'Relatório executivo · Exportação PDF',        print:true },
-};
-let currentScreen='form', dashInit=false, relInit=false;
+var _currentScreen='form', _dashInit=false, _relInit=false;
 
 function navTo(screen){
+  var SCREENS={
+    form:      {el:'screen-form',      nav:'nav-form',      sub:'Análise de arquitetura com Gemini 2.5 Flash', print:false},
+    dashboard: {el:'screen-dashboard', nav:'nav-dashboard', sub:'Dashboard · Histórico de revisões',           print:false},
+    relatorio: {el:'screen-relatorio', nav:'nav-relatorio', sub:'Relatório executivo · Exportação PDF',        print:true },
+  };
   if(!SCREENS[screen]) return;
-  currentScreen=screen;
-  Object.values(SCREENS).forEach(s=>{
-    const el=document.getElementById(s.el); if(el)el.classList.remove('spa-active');
-    const nav=document.getElementById(s.nav); if(nav)nav.classList.remove('active');
+  _currentScreen=screen;
+  Object.values(SCREENS).forEach(function(s){
+    var el=document.getElementById(s.el); if(el)el.classList.remove('spa-active');
+    var nav=document.getElementById(s.nav); if(nav)nav.classList.remove('active');
   });
   document.getElementById(SCREENS[screen].el).classList.add('spa-active');
   document.getElementById(SCREENS[screen].nav).classList.add('active');
-  const sub=document.getElementById('header-subtitle'); if(sub)sub.textContent=SCREENS[screen].sub;
+  var sub=document.getElementById('header-subtitle'); if(sub)sub.textContent=SCREENS[screen].sub;
   document.getElementById('nav-print').style.display=SCREENS[screen].print?'inline-flex':'none';
   window.scrollTo(0,0);
-  if(screen==='dashboard'&&!dashInit){ dashInit=true; setTimeout(()=>{if(typeof init==='function')init();},80); }
-  if(screen==='relatorio'&&!relInit){ relInit=true; setTimeout(()=>{if(typeof render==='function')render(typeof DATA!=='undefined'?DATA:{});},80); }
+  if(screen==='dashboard'&&!_dashInit){_dashInit=true;setTimeout(function(){if(typeof init==='function')init();},80);}
+  if(screen==='relatorio'&&!_relInit){_relInit=true;setTimeout(function(){if(typeof render==='function')render(typeof DATA!=='undefined'?DATA:{});},80);}
 }
 
-function toast(msg,type='def'){
-  const c=document.getElementById('toasts'); if(!c)return;
-  const el=document.createElement('div'); el.className=`toast t-${type}`;
-  const icons={suc:'<svg fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>',err:'<svg fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg>',inf:'<svg fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>'};
-  el.innerHTML=(icons[type]||icons.inf)+`<span>${msg}</span>`;
-  c.appendChild(el); setTimeout(()=>el.remove(),3300);
+function toast(msg,type){
+  type=type||'def';
+  var c=document.getElementById('toasts'); if(!c)return;
+  var el=document.createElement('div'); el.className='toast t-'+type;
+  var icons={suc:'<svg fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>',err:'<svg fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg>',inf:'<svg fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>'};
+  el.innerHTML=(icons[type]||icons.inf)+'<span>'+msg+'</span>';
+  c.appendChild(el);setTimeout(function(){el.remove();},3300);
 }
 
-window.addEventListener('beforeprint',()=>{
-  document.querySelectorAll('.spa-screen').forEach(s=>s.style.setProperty('display','none','important'));
-  const rel=document.getElementById('screen-relatorio'); if(rel)rel.style.setProperty('display','block','important');
+window.addEventListener('beforeprint',function(){
+  document.querySelectorAll('.spa-screen').forEach(function(s){s.style.setProperty('display','none','important');});
+  var rel=document.getElementById('screen-relatorio'); if(rel)rel.style.setProperty('display','block','important');
   document.getElementById('main-header').style.setProperty('display','none','important');
 });
-window.addEventListener('afterprint',()=>{
-  document.querySelectorAll('.spa-screen').forEach(s=>s.style.removeProperty('display'));
-  navTo(currentScreen);
+window.addEventListener('afterprint',function(){
+  document.querySelectorAll('.spa-screen').forEach(function(s){s.style.removeProperty('display');});
+  navTo(_currentScreen);
   document.getElementById('main-header').style.removeProperty('display');
 });
 
-document.addEventListener('DOMContentLoaded',()=>{
+/* ════════════════════════════════════════════════════
+   MSAL + SP REST API — GLOBAIS
+   App: TechReviewApp | Tenant: Service Informatica LTDA
+════════════════════════════════════════════════════ */
+var SP_SITE          = 'https://serviceitcombr.sharepoint.com/sites/TechReviewAI';
+var SP_LIST_REVISOES = 'ee6f52a8-cbd7-4b54-b54b-02fb916bdbc6';
+var SP_LIST_ACHADOS  = '2e1f84d2-15f6-4ce2-a7d0-df4e305a0837';
+var SP_SCOPES        = ['https://serviceitcombr.sharepoint.com/AllSites.Write'];
+var POLL_INTERVAL_MS = 60000;
+
+var _msalInstance = null;
+var _msalToken    = null;
+var _reviews      = [];  // shared state between form and dashboard
+var _pollTimer    = null;
+
+function _initMsal(){
+  if(_msalInstance) return _msalInstance;
+  _msalInstance = new msal.PublicClientApplication({
+    auth:{
+      clientId:    '4459d583-3048-472c-b826-56244a8aadad',
+      authority:   'https://login.microsoftonline.com/ca18815d-48a9-47e8-95f7-2c31e426f313',
+      redirectUri: 'https://thiagouchoa13.github.io/techreview-app',
+    },
+    cache:{cacheLocation:'sessionStorage'}
+  });
+  return _msalInstance;
+}
+
+async function _getToken(){
+  var inst = _initMsal();
+  var accounts = inst.getAllAccounts();
+  if(!accounts.length) return null;
+  inst.setActiveAccount(accounts[0]);
+  try{
+    var r = await inst.acquireTokenSilent({scopes:SP_SCOPES});
+    return r.accessToken;
+  }catch(e){
+    await inst.acquireTokenRedirect({scopes:SP_SCOPES});
+    return null;
+  }
+}
+
+async function initSPContext(){
+  var inst = _initMsal();
+  await inst.initialize();
+  var resp = await inst.handleRedirectPromise();
+  if(resp){_msalToken=resp.accessToken;inst.setActiveAccount(resp.account);}
+
+  var accounts = inst.getAllAccounts();
+  if(!accounts.length){
+    await inst.loginRedirect({scopes:SP_SCOPES});
+    return;
+  }
+  _msalToken = await _getToken();
+  var account = inst.getActiveAccount();
+
+  var dot  = document.getElementById('sp-conn-dot');
+  var lbl  = document.getElementById('sp-conn-lbl');
+  var site = document.getElementById('sp-site-url');
+  var user = document.getElementById('sp-user-lbl');
+  if(dot)  dot.classList.add('on');
+  if(lbl)  lbl.textContent='Conectado';
+  if(site) site.textContent=SP_SITE.replace('https://','');
+  if(user) user.textContent=(account&&account.name)||'';
+
+  startPolling();
+}
+
+function getSPContext(){
+  return {webUrl:SP_SITE, online:!!_msalToken};
+}
+
+async function spPostItem(webUrl,listId,fields){
+  _msalToken=await _getToken();
+  var r=await fetch(webUrl+"/_api/web/lists(guid'"+listId+"')/items",{
+    method:'POST',
+    headers:{'Authorization':'Bearer '+_msalToken,'Accept':'application/json;odata=verbose','Content-Type':'application/json;odata=verbose'},
+    body:JSON.stringify(Object.assign({'__metadata':{'type':'SP.ListItem'}},fields)),
+  });
+  if(!r.ok){var e=await r.json().catch(function(){return{};});throw new Error((e&&e.error&&e.error.message&&e.error.message.value)||'HTTP '+r.status);}
+  return await r.json();
+}
+
+async function spGetItems(webUrl,listId,filter,select,orderby){
+  _msalToken=await _getToken();
+  var url=webUrl+"/_api/web/lists(guid'"+listId+"')/items?$top=50";
+  if(filter)  url+='&$filter='+encodeURIComponent(filter);
+  if(select)  url+='&$select='+encodeURIComponent(select);
+  if(orderby) url+='&$orderby='+encodeURIComponent(orderby);
+  var r=await fetch(url,{headers:{'Authorization':'Bearer '+_msalToken,'Accept':'application/json;odata=verbose'}});
+  if(!r.ok) throw new Error('GET '+r.status);
+  return (await r.json()).d.results;
+}
+
+async function spUploadAttachment(webUrl,listId,itemId,fileName,fileContent){
+  _msalToken=await _getToken();
+  var url=webUrl+"/_api/web/lists(guid'"+listId+"')/items("+itemId+")/AttachmentFiles/add(FileName='"+encodeURIComponent(fileName)+"')";
+  var r=await fetch(url,{method:'POST',headers:{'Authorization':'Bearer '+_msalToken,'Accept':'application/json;odata=verbose'},body:fileContent});
+  if(!r.ok) throw new Error('Upload '+r.status);
+  return await r.json();
+}
+
+async function pollSharePoint(){
+  try{
+    _msalToken=await _getToken(); if(!_msalToken) return;
+    var items=await spGetItems(SP_SITE,SP_LIST_REVISOES,"Status eq 'Revisado'","ID,Title,Cliente,Score,Risco,Status,Modified","Modified desc");
+    var updated=0;
+    items.forEach(function(item){
+      var idx=_reviews.findIndex(function(r){return r._spId===item.ID;});
+      if(idx>-1&&_reviews[idx]._status!=='done'){
+        _reviews[idx]._status='done';_reviews[idx].Status='Revisado';
+        _reviews[idx].Score=item.Score;_reviews[idx].Risco=item.Risco;
+        updated++;
+      }
+    });
+    if(updated>0){
+      if(typeof renderReviews==='function') renderReviews();
+      toast(updated+' revisão'+(updated>1?'ões':'')+' concluída'+(updated>1?'s':'')+' pelo Power Automate','suc');
+    }
+    var el=document.getElementById('poll-txt');
+    if(el) el.textContent='Última verificação: '+new Date().toLocaleTimeString('pt-BR');
+  }catch(e){console.warn('Polling erro:',e);}
+}
+
+function startPolling(){
+  if(_pollTimer) clearInterval(_pollTimer);
+  var dot=document.getElementById('poll-dot'); if(dot)dot.classList.add('on');
+  var txt=document.getElementById('poll-txt'); if(txt)txt.textContent='Polling ativo (60 s)';
+  pollSharePoint();
+  _pollTimer=setInterval(pollSharePoint,POLL_INTERVAL_MS);
+}
+
+function refreshReviews(){pollSharePoint();if(typeof renderReviews==='function')renderReviews();}
+
+document.addEventListener('DOMContentLoaded',function(){
   navTo('form');
-  if(typeof initSPContext==='function') initSPContext();
+  initSPContext();
   if(typeof renderTree==='function') renderTree('');
 });
 </script>
 
+<!-- ══ FORM JS ══ -->
 <script>
 /* ════════════════════════════════════════════════════════════
    TECH REVIEW AI — FORM ENGINE v2.0
@@ -3585,8 +3599,9 @@ const SP_LIST_ACHADOS  = '2e1f84d2-15f6-4ce2-a7d0-df4e305a0837';
 const POLL_INTERVAL_MS = 60000;
 
 /* ══ STATE ══ */
-let reviews = [], files = [], haVal = '', drVal = '', pollTimer = null;
-let treeAllExpanded = false, treeFilter = '', selectedRevId = null;
+var reviews = _reviews;
+var files = [], haVal = '', drVal = '', pollTimer = null;
+var treeAllExpanded = false, treeFilter = '', selectedRevId = null;
 let spCtx = null;
 
 /* ════════════════════════════════════════════════════════
@@ -4127,6 +4142,7 @@ function limpar(){
 
 </script>
 
+<!-- ══ DASHBOARD JS ══ -->
 <script>
 
 /* ══════════════════════════
@@ -4670,10 +4686,10 @@ s.textContent='@keyframes spin{from{transform:rotate(0)}to{transform:rotate(360d
 document.head.appendChild(s)
 
 /* ══ INIT ══ */
-document.addEventListener('DOMContentLoaded', init)
-
+/* init() called lazily by SPA */
 </script>
 
+<!-- ══ RELATORIO JS ══ -->
 <script>
 
 /* ══════════════════════════════════════════
